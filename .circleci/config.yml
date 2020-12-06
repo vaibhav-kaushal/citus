@@ -200,6 +200,31 @@ jobs:
       - store_artifacts:
           path: '/tmp/core_dumps'
 
+  test-11_check-operations:
+    docker:
+      - image: 'citus/exttester:11.9'
+    working_directory: /home/circleci/project
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: 'Enable core dumps'
+          command: 'ulimit -c unlimited'
+      - run:
+          name: 'Install and Test (operations)'
+          command: 'chown -R circleci:circleci /home/circleci && install-and-test-ext check-operations'
+          no_output_timeout: 2m
+      - run:
+          command: |
+            mkdir -p /tmp/core_dumps
+            cp core.* /tmp/core_dumps
+          when: on_fail
+      - codecov/upload:
+          flags: 'test_11,operations'
+      - store_artifacts:
+          path: '/tmp/core_dumps'
+
   test-11_check-failure:
     docker:
       - image: 'citus/failtester:11.9'
@@ -339,6 +364,31 @@ jobs:
           when: on_fail
       - codecov/upload:
           flags: 'test_12,follower-cluster'
+      - store_artifacts:
+          path: '/tmp/core_dumps'
+
+  test-12_check-operations:
+    docker:
+      - image: 'citus/exttester:12.4'
+    working_directory: /home/circleci/project
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: 'Enable core dumps'
+          command: 'ulimit -c unlimited'
+      - run:
+          name: 'Install and Test (operations)'
+          command: 'chown -R circleci:circleci /home/circleci && install-and-test-ext check-operations'
+          no_output_timeout: 2m
+      - run:
+          command: |
+            mkdir -p /tmp/core_dumps
+            cp core.* /tmp/core_dumps
+          when: on_fail
+      - codecov/upload:
+          flags: 'test_12,operations'
       - store_artifacts:
           path: '/tmp/core_dumps'
 
@@ -510,6 +560,31 @@ jobs:
       - store_artifacts:
           path: '/tmp/core_dumps'
 
+  test-13_check-operations:
+    docker:
+      - image: 'citus/exttester:13.0'
+    working_directory: /home/circleci/project
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: 'Enable core dumps'
+          command: 'ulimit -c unlimited'
+      - run:
+          name: 'Install and Test (operations)'
+          command: 'chown -R circleci:circleci /home/circleci && install-and-test-ext check-operations'
+          no_output_timeout: 2m
+      - run:
+          command: |
+            mkdir -p /tmp/core_dumps
+            cp core.* /tmp/core_dumps
+          when: on_fail
+      - codecov/upload:
+          flags: 'test_13,operations'
+      - store_artifacts:
+          path: '/tmp/core_dumps'
+
   test-13_check-columnar:
     docker:
       - image: 'citus/exttester:13.0'
@@ -623,6 +698,8 @@ workflows:
           requires: [build-11]
       - test-11_check-follower-cluster:
           requires: [build-11]
+      - test-11_check-operations:
+          requires: [build-11]
       - test-11_check-failure:
           requires: [build-11]
 
@@ -637,6 +714,8 @@ workflows:
       - test-12_check-worker:
           requires: [build-12]
       - test-12_check-follower-cluster:
+          requires: [build-12]
+      - test-12_check-operations:
           requires: [build-12]
       - test-12_check-columnar:
           requires: [build-12]
@@ -656,6 +735,8 @@ workflows:
       - test-13_check-worker:
           requires: [build-13]
       - test-13_check-follower-cluster:
+          requires: [build-13]
+      - test-13_check-operations:
           requires: [build-13]
       - test-13_check-columnar:
           requires: [build-13]
