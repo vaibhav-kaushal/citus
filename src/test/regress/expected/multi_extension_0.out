@@ -476,10 +476,11 @@ SELECT * FROM print_extension_changes();
 -- Snapshot of state at 10.0-1
 ALTER EXTENSION citus UPDATE TO '10.0-1';
 SELECT * FROM print_extension_changes();
-               previous_object                |                     current_object
+               previous_object                |                         current_object
 ---------------------------------------------------------------------
  function citus_total_relation_size(regclass) |
                                               | function citus_internal.columnar_ensure_objects_exist()
+                                              | function citus_set_coordinator_host(text,integer,noderole,name)
                                               | function citus_total_relation_size(regclass,boolean)
                                               | schema columnar
                                               | sequence columnar.storageid_seq
@@ -487,7 +488,7 @@ SELECT * FROM print_extension_changes();
                                               | table columnar.columnar_stripes
                                               | table columnar.options
                                               | view citus_tables
-(9 rows)
+(10 rows)
 
 DROP TABLE prev_objects, extension_diff;
 -- show running version
