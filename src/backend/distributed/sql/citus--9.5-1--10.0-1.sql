@@ -9,7 +9,7 @@ DROP FUNCTION IF EXISTS pg_catalog.citus_total_relation_size(regclass);
 #include "../../columnar/sql/columnar--9.5-1--10.0-1.sql"
 
 -- Remove all the appended shardId from the names of constraints of partitioned tables,
--- with the eception of foreign key constraints that should keep the shardId in their names
+-- with the exception of foreign key constraints that should keep the shardId in their names
 DO $$DECLARE r record;
 BEGIN
     FOR r IN SELECT cls.relname::text table_name,
@@ -17,9 +17,9 @@ BEGIN
                     constraint_name_and_shardid[1] as new_constraint_name
                 FROM pg_catalog.pg_constraint cons
                     JOIN pg_class cls ON cons.conrelid = cls.oid,
-                    -- capture the original constraint name and the shardid in seperate groups
+                    -- capture the original constraint name and the shardid in separate groups
                     regexp_match(cons.conname, '^(.*)_([0-9]+)$') as constraint_name_and_shardid,
-                    -- capture the parent table name and the shardid in seperate groups
+                    -- capture the parent table name and the shardid in separate groups
                     regexp_match(cls.relname::text, '^(.*)_([0-9]+)$') as parent_name_and_shardid
                 WHERE
                     -- ignore foreign key constraints
