@@ -485,13 +485,15 @@ SELECT * FROM print_extension_changes();
                                               | function citus_internal.columnar_ensure_objects_exist()
                                               | function citus_total_relation_size(regclass,boolean)
                                               | function columnar.columnar_handler(internal)
+                                              | function time_partition_range(regclass)
                                               | schema columnar
                                               | sequence columnar.storageid_seq
                                               | table columnar.columnar_skipnodes
                                               | table columnar.columnar_stripes
                                               | table columnar.options
                                               | view citus_tables
-(13 rows)
+                                              | view time_partitions
+(15 rows)
 
 DROP TABLE prev_objects, extension_diff;
 -- show running version

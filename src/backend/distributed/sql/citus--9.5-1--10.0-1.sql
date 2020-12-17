@@ -7,3 +7,6 @@ DROP FUNCTION IF EXISTS pg_catalog.citus_total_relation_size(regclass);
 #include "udfs/citus_finish_pg_upgrade/10.0-1.sql"
 
 #include "../../columnar/sql/columnar--9.5-1--10.0-1.sql"
+
+#include "udfs/time_partition_range/10.0-1.sql"
+#include "udfs/time_partitions/10.0-1.sql"

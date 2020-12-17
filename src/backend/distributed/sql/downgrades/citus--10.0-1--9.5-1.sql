@@ -8,4 +8,7 @@
 DROP VIEW public.citus_tables;
 DROP FUNCTION pg_catalog.citus_total_relation_size(regclass,boolean);
 
+DROP VIEW pg_catalog.time_partitions;
+DROP FUNCTION pg_catalog.time_partition_range(regclass);
+
 #include "../udfs/citus_total_relation_size/7.0-1.sql"
