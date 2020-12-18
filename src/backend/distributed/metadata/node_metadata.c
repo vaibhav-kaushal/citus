@@ -163,14 +163,26 @@ citus_set_coordinator_host(PG_FUNCTION_ARGS)
 	Name nodeClusterName = PG_GETARG_NAME(3);
 	nodeMetadata.nodeCluster = NameStr(*nodeClusterName);
 
-	bool nodeAlreadyExists = false;
-
 	CheckCitusVersion(ERROR);
 
-	/* add the coordinator to pg_dist_node if it was not already added */
-	int nodeId = AddNodeMetadata(nodeNameString, nodePort, &nodeMetadata,
-								 &nodeAlreadyExists);
-	if (nodeAlreadyExists)
+	/* prevent concurrent modification */
+	LockRelationOid(DistNodeRelationId(), RowShareLock);
+
+	bool isCoordinatorInMetadata = false;
+	WorkerNode *coordinatorNode = PrimaryNodeForGroup(COORDINATOR_GROUP_ID,
+													  &isCoordinatorInMetadata);
+	if (!isCoordinatorInMetadata)
+	{
+		bool nodeAlreadyExists = false;
+
+		/* add the coordinator to pg_dist_node if it was not already added */
+		AddNodeMetadata(nodeNameString, nodePort, &nodeMetadata,
+						&nodeAlreadyExists);
+
+		/* we just checked */
+		Assert(!nodeAlreadyExists);
+	}
+	else
 	{
 		/*
 		 * since AddNodeMetadata takes an exclusive lock on pg_dist_node, we
@@ -178,7 +190,7 @@ citus_set_coordinator_host(PG_FUNCTION_ARGS)
 		 * can proceed to update immediately.
 		 */
 
-		UpdateNodeLocation(nodeId, nodeNameString, nodePort);
+		UpdateNodeLocation(coordinatorNode->nodeId, nodeNameString, nodePort);
 
 		/* clear cached plans that have the old host/port */
 		ResetPlanCache();
@@ -1268,6 +1280,29 @@ AddNodeMetadata(char *nodeName, int32 nodePort,
 		return workerNode->nodeId;
 	}
 
+	if (nodeMetadata->groupId != COORDINATOR_GROUP_ID &&
+		strcmp(nodeName, "localhost") != 0)
+	{
+		/*
+		 * User tries to add a worker with a non-localhost address. If the coordinator
+		 * is added with "localhost" as well, the worker won't be able to connect.
+		 */
+
+		bool isCoordinatorInMetadata = false;
+		WorkerNode *coordinatorNode = PrimaryNodeForGroup(COORDINATOR_GROUP_ID,
+														  &isCoordinatorInMetadata);
+		if (isCoordinatorInMetadata &&
+			strcmp(coordinatorNode->workerName, "localhost") == 0)
+		{
+			ereport(ERROR, (errmsg("cannot add a worker node when the coordinator "
+								   "hostname is set to localhost"),
+							errdetail("Worker nodes need to be able to connect to the "
+									  "coordinator to transfer data."),
+							errhint("Use SELECT citus_set_coordinator_host('<hostname>') "
+									"to configure the coordinator hostname")));
+		}
+	}
+
 	/* user lets Citus to decide on the group that the newly added node should be in */
 	if (nodeMetadata->groupId == INVALID_GROUP_ID)
 	{
@@ -1583,6 +1618,26 @@ EnsureCoordinator(void)
 		ereport(ERROR, (errmsg("operation is not allowed on this node"),
 						errhint("Connect to the coordinator and run it again.")));
 	}
+}
+
+
+/*
+ * InsertPlaceholderCoordinatorRecord inserts a placeholder record for the coordinator
+ * to be able to create distributed tables on a single node.
+ */
+void
+InsertPlaceholderCoordinatorRecord(void)
+{
+	NodeMetadata nodeMetadata = DefaultNodeMetadata();
+	nodeMetadata.groupId = 0;
+	nodeMetadata.shouldHaveShards = false;
+	nodeMetadata.nodeRole = PrimaryNodeRoleId();
+	nodeMetadata.nodeCluster = "default";
+
+	bool nodeAlreadyExists = false;
+
+	/* as long as there is a single node, localhost should be ok */
+	AddNodeMetadata("localhost", PostPortNumber, &nodeMetadata, &nodeAlreadyExists);
 }
 
 

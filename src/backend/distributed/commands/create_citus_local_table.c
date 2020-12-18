@@ -133,6 +133,17 @@ CreateCitusLocalTable(Oid relationId)
 	 */
 	relation_close(relation, NoLock);
 
+	/* prevent concurrent node additions */
+	LockRelationOid(DistNodeRelationId(), RowShareLock);
+
+	if (!HasAnyNodes())
+	{
+		/*
+		 * create_citus_local_table is being called for the first time and there are
+		 * no pg_dist_node records. Add a record for the coordinator.
+		 */
+		InsertPlaceholderCoordinatorRecord();
+	}
 
 	ObjectAddress tableAddress = { 0 };
 	ObjectAddressSet(tableAddress, RelationRelationId, relationId);

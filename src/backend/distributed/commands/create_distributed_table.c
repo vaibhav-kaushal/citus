@@ -355,6 +355,18 @@ void
 CreateDistributedTable(Oid relationId, Var *distributionColumn, char distributionMethod,
 					   char *colocateWithTableName, bool viaDeprecatedAPI)
 {
+	/* prevent concurrent node additions */
+	LockRelationOid(DistNodeRelationId(), RowShareLock);
+
+	if (!HasAnyNodes())
+	{
+		/*
+		 * create_distributed_table being called for the first time and there are
+		 * no pg_dist_node records. Add a record for the coordinator.
+		 */
+		InsertPlaceholderCoordinatorRecord();
+	}
+
 	/*
 	 * distributed tables might have dependencies on different objects, since we create
 	 * shards for a distributed table via multiple sessions these objects will be created

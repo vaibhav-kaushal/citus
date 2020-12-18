@@ -195,6 +195,7 @@ extern char LookupDistributionMethod(Oid distributionMethodOid);
 extern bool RelationExists(Oid relationId);
 
 /* access WorkerNodeHash */
+bool HasAnyNodes(void);
 extern HTAB * GetWorkerNodeHash(void);
 extern WorkerNode * LookupNodeByNodeId(uint32 nodeId);
 extern WorkerNode * LookupNodeByNodeIdOrError(uint32 nodeId);
