@@ -17,10 +17,35 @@ SELECT 1 FROM master_disable_node('localhost', :master_port);
 
 RESET client_min_messages;
 
+SELECT 1 FROM master_remove_node('localhost', :master_port);
+
+SELECT count(*) FROM pg_dist_node;
+
+-- there are no workers now, but we should still be able to create a distributed table
+
 CREATE TABLE test(x int, y int);
 SELECT create_distributed_table('test','x');
 
--- should have shards setting should not matter for a single node
+SELECT nodename, nodeport FROM pg_dist_node;
+
+-- cannot add workers with specific IP as long as I have a placeholder coordinator record
+SELECT 1 FROM master_add_node('127.0.0.1', :worker_1_port);
+
+-- adding localhost workers is ok
+SELECT 1 FROM master_add_node('localhost', :worker_1_port);
+SELECT 1 FROM master_remove_node('localhost', :worker_1_port);
+
+-- set the coordinator host to something different than localhost
+SELECT 1 FROM citus_set_coordinator_host('127.0.0.1');
+
+-- adding workers with specific IP is ok now
+SELECT 1 FROM master_add_node('127.0.0.1', :worker_1_port);
+SELECT 1 FROM master_remove_node('127.0.0.1', :worker_1_port);
+
+-- set the coordinator host back to localhost for the remainder of tests
+SELECT 1 FROM citus_set_coordinator_host('localhost');
+
+-- should have shards setting should not really matter for a single node
 SELECT 1 FROM master_set_node_property('localhost', :master_port, 'shouldhaveshards', true);
 
 CREATE TYPE new_type AS (n int, m text);

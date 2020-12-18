@@ -1,5 +1,6 @@
 SET citus.next_shard_id TO 1220000;
 ALTER SEQUENCE pg_catalog.pg_dist_colocationid_seq RESTART 1390000;
+ALTER SEQUENCE pg_catalog.pg_dist_groupid_seq RESTART 1;
 SET citus.enable_object_propagation TO off; -- prevent object propagation on add node during setup
 
 -- Tests functions related to cluster membership

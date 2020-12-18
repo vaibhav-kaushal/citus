@@ -20,6 +20,19 @@ SELECT 1 FROM master_disable_node('localhost', :master_port);
 ERROR:  Disabling localhost:xxxxx failed
 DETAIL:  cannot change "isactive" field of the coordinator node
 RESET client_min_messages;
+SELECT 1 FROM master_remove_node('localhost', :master_port);
+ ?column?
+---------------------------------------------------------------------
+        1
+(1 row)
+
+SELECT count(*) FROM pg_dist_node;
+ count
+---------------------------------------------------------------------
+     0
+(1 row)
+
+-- there are no workers now, but we should still be able to create a distributed table
 CREATE TABLE test(x int, y int);
 SELECT create_distributed_table('test','x');
  create_distributed_table
@@ -27,7 +40,58 @@ SELECT create_distributed_table('test','x');
 
 (1 row)
 
--- should have shards setting should not matter for a single node
+SELECT nodename, nodeport FROM pg_dist_node;
+ nodename  | nodeport
+---------------------------------------------------------------------
+ localhost |    57636
+(1 row)
+
+-- cannot add workers with specific IP as long as I have a placeholder coordinator record
+SELECT 1 FROM master_add_node('127.0.0.1', :worker_1_port);
+ERROR:  cannot add a worker node when the coordinator hostname is set to localhost
+DETAIL:  Worker nodes need to be able to connect to the coordinator to transfer data.
+HINT:  Use SELECT citus_set_coordinator_host('<hostname>') to configure the coordinator hostname
+-- adding localhost workers is ok
+SELECT 1 FROM master_add_node('localhost', :worker_1_port);
+ ?column?
+---------------------------------------------------------------------
+        1
+(1 row)
+
+SELECT 1 FROM master_remove_node('localhost', :worker_1_port);
+ ?column?
+---------------------------------------------------------------------
+        1
+(1 row)
+
+-- set the coordinator host to something different than localhost
+SELECT 1 FROM citus_set_coordinator_host('127.0.0.1');
+ ?column?
+---------------------------------------------------------------------
+        1
+(1 row)
+
+-- adding workers with specific IP is ok now
+SELECT 1 FROM master_add_node('127.0.0.1', :worker_1_port);
+ ?column?
+---------------------------------------------------------------------
+        1
+(1 row)
+
+SELECT 1 FROM master_remove_node('127.0.0.1', :worker_1_port);
+ ?column?
+---------------------------------------------------------------------
+        1
+(1 row)
+
+-- set the coordinator host back to localhost for the remainder of tests
+SELECT 1 FROM citus_set_coordinator_host('localhost');
+ ?column?
+---------------------------------------------------------------------
+        1
+(1 row)
+
+-- should have shards setting should not really matter for a single node
 SELECT 1 FROM master_set_node_property('localhost', :master_port, 'shouldhaveshards', true);
  ?column?
 ---------------------------------------------------------------------
@@ -997,7 +1061,7 @@ END;$$;
 SELECT * FROM pg_dist_node;
  nodeid | groupid | nodename  | nodeport | noderack | hasmetadata | isactive | noderole | nodecluster | metadatasynced | shouldhaveshards
 ---------------------------------------------------------------------
-      1 |       0 | localhost |    57636 | default  | t           | t        | primary  | default     | t              | t
+      2 |       0 | localhost |    57636 | default  | t           | t        | primary  | default     | t              | t
 (1 row)
 
 SELECT create_distributed_function('call_delegation(int)', '$1', 'test');
