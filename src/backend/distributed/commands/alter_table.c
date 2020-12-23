@@ -36,6 +36,13 @@
 #define ALTER_DISTRIBUTED_TABLE 'a'
 #define ALTER_TABLE_SET_ACCESS_METHOD 'm'
 
+typedef enum CascadeToColocatedValue
+{
+	CASCADE_TO_COLOCATED_YES,
+	CASCADE_TO_COLOCATED_NO,
+	CASCADE_TO_COLOCATED_UNSPECIFIED
+}CascadeToColocatedValue;
+
 /*
  * TableConversionParameters are the parameters that are given to
  * table conversion UDFs: undistribute_table, alter_distributed_table,
@@ -45,7 +52,7 @@
  * conversion functions some of the parameters needs to be set:
  * UndistributeTable: relationId
  * AlterDistributedTable: relationId, distributionColumn, shardCountIsNull,
- * 	shardCount, colocateWith, cascadeToColocatedIsNull, cascadeToColocated
+ * shardCount, colocateWith, cascadeToColocated
  * AlterTableSetAccessMethod: relationId, accessMethod
  *
  * conversionType parameter will be automatically set by the function.
@@ -80,14 +87,10 @@ typedef struct TableConversionParameters
 	char *accessMethod;
 
 	/*
-	 * cascadeToColocatedIsNull is if the cascateToColocated
-	 * variable is given
-	 * cascateToColocated determines whether to cascated
-	 * shardCount and colocateWith will be cascaded to the
-	 * currently colocated tables
+	 * cascadeToColocated determines whether the shardCount and
+	 * colocateWith will be cascaded to the currently colocated tables
 	 */
-	bool cascadeToColocatedIsNull;
-	bool cascadeToColocated;
+	CascadeToColocatedValue cascadeToColocated;
 } TableConversionParameters;
 
 
@@ -130,14 +133,10 @@ typedef struct TableConversionState
 	char *accessMethod;
 
 	/*
-	 * cascadeToColocatedIsNull is if the cascateToColocated
-	 * variable is given
-	 * cascateToColocated determines whether to cascated
-	 * shardCount and colocateWith will be cascaded to the
-	 * currently colocated tables
+	 * cascadeToColocated determines whether the shardCount and
+	 * colocateWith will be cascaded to the currently colocated tables
 	 */
-	bool cascadeToColocatedIsNull;
-	bool cascadeToColocated;
+	CascadeToColocatedValue cascadeToColocated;
 
 	/* schema of the table */
 	char *schemaName;
@@ -191,7 +190,7 @@ static void CreateDistributedTableLike(TableConversionState *con);
 static void CreateCitusTableLike(TableConversionState *con);
 static List * GetViewCreationCommandsOfTable(Oid relationId);
 static void ReplaceTable(Oid sourceId, Oid targetId, List *justBeforeDropCommands);
-static void AlterDistributedTableMessages(TableConversionState *con);
+static void CheckAlterDistributedTableConversionParameters(TableConversionState *con);
 
 PG_FUNCTION_INFO_V1(undistribute_table);
 PG_FUNCTION_INFO_V1(alter_distributed_table);
@@ -255,12 +254,17 @@ alter_distributed_table(PG_FUNCTION_ARGS)
 		colocateWith = text_to_cstring(colocateWithText);
 	}
 
-	bool cascadeToColocated = false;
-	bool cascadeToColocatedIsNull = true;
+	CascadeToColocatedValue cascadeToColocated = CASCADE_TO_COLOCATED_UNSPECIFIED;
 	if (!PG_ARGISNULL(4))
 	{
-		cascadeToColocated = PG_GETARG_BOOL(4);
-		cascadeToColocatedIsNull = false;
+		if (PG_GETARG_BOOL(4) == true)
+		{
+			cascadeToColocated = CASCADE_TO_COLOCATED_YES;
+		}
+		else
+		{
+			cascadeToColocated = CASCADE_TO_COLOCATED_NO;
+		}
 	}
 
 	CheckCitusVersion(ERROR);
@@ -275,7 +279,6 @@ alter_distributed_table(PG_FUNCTION_ARGS)
 		.shardCountIsNull = shardCountIsNull,
 		.shardCount = shardCount,
 		.colocateWith = colocateWith,
-		.cascadeToColocatedIsNull = cascadeToColocatedIsNull,
 		.cascadeToColocated = cascadeToColocated
 	};
 
@@ -367,7 +370,7 @@ AlterDistributedTable(TableConversionParameters *params)
 
 	params->conversionType = ALTER_DISTRIBUTED_TABLE;
 	TableConversionState *con = CreateTableConversion(params);
-	AlterDistributedTableMessages(con);
+	CheckAlterDistributedTableConversionParameters(con);
 	ConvertTable(con);
 }
 
@@ -461,7 +464,9 @@ ConvertTable(TableConversionState *con)
 				partitionRelationId);
 
 			/*
-			 * We first detach the partitions to be able to undistribute them separately.
+			 * We first detach the partitions to be able to convert them separately.
+			 * After this they are no longer partitions, so they will not be caught by
+			 * the checks.
 			 */
 			spiResult = SPI_execute(detachPartitionCommand, false, 0);
 			if (spiResult != SPI_OK_UTILITY)
@@ -538,7 +543,7 @@ ConvertTable(TableConversionState *con)
 		ereport(ERROR, (errmsg("could not finish SPI connection")));
 	}
 
-	if (con->cascadeToColocated)
+	if (con->cascadeToColocated == CASCADE_TO_COLOCATED_YES)
 	{
 		Oid colocatedTableId = InvalidOid;
 
@@ -642,7 +647,6 @@ CreateTableConversion(TableConversionParameters *params)
 	con->shardCount = params->shardCount;
 	con->colocateWith = params->colocateWith;
 	con->accessMethod = params->accessMethod;
-	con->cascadeToColocatedIsNull = params->cascadeToColocatedIsNull;
 	con->cascadeToColocated = params->cascadeToColocated;
 
 	Relation relation = try_relation_open(con->relationId, ExclusiveLock);
@@ -843,16 +847,15 @@ ReplaceTable(Oid sourceId, Oid targetId, List *justBeforeDropCommands)
 
 
 /*
- * AlterDistributedTableMessages errors for the cases where
+ * CheckAlterDistributedTableConversionParameters errors for the cases where
  * alter_distributed_table UDF wouldn't work.
  */
 void
-AlterDistributedTableMessages(TableConversionState *con)
+CheckAlterDistributedTableConversionParameters(TableConversionState *con)
 {
 	/* Changing nothing is not allowed */
 	if (con->distributionColumn == NULL && con->shardCountIsNull &&
-		con->colocateWith == NULL &&
-		(con->cascadeToColocatedIsNull || con->cascadeToColocated == false))
+		con->colocateWith == NULL && con->cascadeToColocated != CASCADE_TO_COLOCATED_YES)
 	{
 		ereport(ERROR, (errmsg("you have to specify at least one of the "
 							   "distribution_column, shard_count or "
@@ -906,18 +909,20 @@ AlterDistributedTableMessages(TableConversionState *con)
 								"undistribute_table() function")));
 	}
 
-	if (con->cascadeToColocated == true && con->distributionColumn != NULL)
+	if (con->cascadeToColocated == CASCADE_TO_COLOCATED_YES &&
+		con->distributionColumn != NULL)
 	{
 		ereport(ERROR, (errmsg("distribution_column changes cannot be "
 							   "cascaded to colocated tables")));
 	}
-	if (con->cascadeToColocated == true && con->shardCountIsNull &&
+	if (con->cascadeToColocated == CASCADE_TO_COLOCATED_YES && con->shardCountIsNull &&
 		con->colocateWith == NULL)
 	{
 		ereport(ERROR, (errmsg("shard_count or colocate_with is necessary "
 							   "for cascading to colocated tables")));
 	}
-	if (con->cascadeToColocated == true && con->colocateWith != NULL &&
+	if (con->cascadeToColocated == CASCADE_TO_COLOCATED_YES &&
+		con->colocateWith != NULL &&
 		strcmp(con->colocateWith, "none") == 0)
 	{
 		ereport(ERROR, (errmsg("colocate_with := 'none' cannot be "
@@ -925,8 +930,8 @@ AlterDistributedTableMessages(TableConversionState *con)
 	}
 
 	int colocatedTableCount = list_length(con->colocatedTableList) - 1;
-	if (!con->shardCountIsNull && con->cascadeToColocatedIsNull &&
-		colocatedTableCount > 0)
+	if (colocatedTableCount > 0 && !con->shardCountIsNull && 
+		con->cascadeToColocated == CASCADE_TO_COLOCATED_UNSPECIFIED)
 	{
 		ereport(ERROR, (errmsg("cascade_to_colocated parameter is necessary"),
 						errdetail("this table is colocated with some other tables"),
