@@ -711,15 +711,17 @@ ORDER BY tablename;
 
 CREATE TABLE local_table_1 (col int unique);
 CREATE TABLE local_table_2 (col int unique);
--- show that we do not trigger updating foreign key graph when
+-- show that we trigger updating foreign key graph when
 -- defining/dropping foreign keys between postgres tables
 ALTER TABLE local_table_1 ADD CONSTRAINT fkey_1 FOREIGN KEY (col) REFERENCES local_table_2(col);
 SELECT oid::regclass::text AS tablename
 FROM get_foreign_key_connected_relations('local_table_2') AS f(oid oid)
 ORDER BY tablename;
- tablename
+   tablename
 ---------------------------------------------------------------------
-(0 rows)
+ local_table_1
+ local_table_2
+(2 rows)
 
 ALTER TABLE local_table_1 DROP CONSTRAINT fkey_1;
 SELECT oid::regclass::text AS tablename

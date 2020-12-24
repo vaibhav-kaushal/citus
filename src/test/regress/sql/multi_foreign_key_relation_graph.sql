@@ -287,7 +287,7 @@ ORDER BY tablename;
 CREATE TABLE local_table_1 (col int unique);
 CREATE TABLE local_table_2 (col int unique);
 
--- show that we do not trigger updating foreign key graph when
+-- show that we trigger updating foreign key graph when
 -- defining/dropping foreign keys between postgres tables
 
 ALTER TABLE local_table_1 ADD CONSTRAINT fkey_1 FOREIGN KEY (col) REFERENCES local_table_2(col);
