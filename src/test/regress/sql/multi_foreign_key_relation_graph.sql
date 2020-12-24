@@ -307,6 +307,93 @@ SELECT oid::regclass::text AS tablename
 FROM get_foreign_key_connected_relations('non_existent_table') AS f(oid oid)
 ORDER BY tablename;
 
+\set VERBOSITY TERSE
+SET client_min_messages TO DEBUG1;
+
+BEGIN;
+  ALTER TABLE distributed_table_2 DROP CONSTRAINT distributed_table_2_col_key CASCADE;
+  ALTER TABLE distributed_table_3 DROP CONSTRAINT distributed_table_3_col_key CASCADE;
+  -- show that we process drop constraint commands that are dropping uniquness
+  -- constraints and then invalidate fkey graph. So we shouldn't see
+  -- distributed_table_3 as it was split via above drop constraint commands
+  SELECT oid::regclass::text AS tablename
+  FROM get_foreign_key_connected_relations('distributed_table_2') AS f(oid oid)
+  ORDER BY tablename;
+ROLLBACK;
+
+-- now we should see distributed_table_2 as well as we rollback'ed
+SELECT oid::regclass::text AS tablename
+FROM get_foreign_key_connected_relations('distributed_table_2') AS f(oid oid)
+ORDER BY tablename;
+
+BEGIN;
+  DROP TABLE distributed_table_2 CASCADE;
+  -- should only see reference_table_1 & reference_table_1
+  SELECT oid::regclass::text AS tablename
+  FROM get_foreign_key_connected_relations('reference_table_1') AS f(oid oid)
+  ORDER BY tablename;
+ROLLBACK;
+
+BEGIN;
+  ALTER TABLE distributed_table_2 ADD CONSTRAINT fkey_55 FOREIGN KEY (col) REFERENCES reference_table_2(col);
+  ALTER TABLE distributed_table_1 ADD CONSTRAINT fkey_66 FOREIGN KEY (col) REFERENCES distributed_table_3(col);
+  -- show that we handle multiple edges between nodes in foreign key graph
+  SELECT oid::regclass::text AS tablename
+  FROM get_foreign_key_connected_relations('reference_table_1') AS f(oid oid)
+  ORDER BY tablename;
+ROLLBACK;
+
+BEGIN;
+  -- hide "verifying table" log because the order we print it changes in different pg versions
+  set client_min_messages to error;
+  ALTER TABLE distributed_table_2 ADD CONSTRAINT pkey PRIMARY KEY (col);
+  set client_min_messages to debug1;
+
+  ALTER TABLE distributed_table_2 DROP CONSTRAINT pkey;
+  -- drop an unrelated uniquness constraint, see graph is same
+  SELECT oid::regclass::text AS tablename
+  FROM get_foreign_key_connected_relations('reference_table_1') AS f(oid oid)
+  ORDER BY tablename;
+ROLLBACK;
+
+BEGIN;
+  CREATE TABLE local_table_3 (col int PRIMARY KEY);
+  ALTER TABLE local_table_1 ADD COLUMN another_col int REFERENCES local_table_3(col);
+
+  CREATE TABLE local_table_4 (col int PRIMARY KEY REFERENCES local_table_3 (col));
+
+  -- we track add column & create table commands defining foreign keys too
+  SELECT oid::regclass::text AS tablename
+  FROM get_foreign_key_connected_relations('local_table_3') AS f(oid oid)
+  ORDER BY tablename;
+ROLLBACK;
+
+BEGIN;
+  CREATE TABLE local_table_3 (col int PRIMARY KEY);
+  ALTER TABLE local_table_1 ADD COLUMN another_col int REFERENCES local_table_3(col);
+
+  ALTER TABLE local_table_1 DROP COLUMN another_col;
+
+  -- we track drop column commands dropping referencing columns,
+  -- should not print anything
+  SELECT oid::regclass::text AS tablename
+  FROM get_foreign_key_connected_relations('local_table_1') AS f(oid oid)
+  ORDER BY tablename;
+ROLLBACK;
+
+BEGIN;
+  CREATE TABLE local_table_3 (col int PRIMARY KEY);
+  ALTER TABLE local_table_1 ADD COLUMN another_col int REFERENCES local_table_3(col);
+
+  ALTER TABLE local_table_3 DROP COLUMN col CASCADE;
+
+  -- we track drop column commands dropping referenced columns,
+  -- should not print anything
+  SELECT oid::regclass::text AS tablename
+  FROM get_foreign_key_connected_relations('local_table_1') AS f(oid oid)
+  ORDER BY tablename;
+ROLLBACK;
+
 set client_min_messages to error;
 
 SET search_path TO public;
