@@ -18,6 +18,7 @@
 #include "distributed/commands.h"
 #include "distributed/commands/utility_hook.h"
 #include "distributed/coordinator_protocol.h"
+#include "distributed/deparser.h"
 #include "distributed/distribution_column.h"
 #include "distributed/listutils.h"
 #include "distributed/metadata/dependency.h"
@@ -38,9 +39,9 @@
 
 typedef enum CascadeToColocatedValue
 {
+	CASCADE_TO_COLOCATED_UNSPECIFIED,
 	CASCADE_TO_COLOCATED_YES,
-	CASCADE_TO_COLOCATED_NO,
-	CASCADE_TO_COLOCATED_UNSPECIFIED
+	CASCADE_TO_COLOCATED_NO
 }CascadeToColocatedValue;
 
 /*
@@ -342,6 +343,7 @@ UndistributeTable(TableConversionParameters *params)
 	EnsureTableNotPartition(params->relationId);
 
 	params->conversionType = UNDISTRIBUTE_TABLE;
+	params->shardCountIsNull = true;
 	TableConversionState *con = CreateTableConversion(params);
 	ConvertTable(con);
 }
@@ -396,6 +398,7 @@ AlterTableSetAccessMethod(TableConversionParameters *params)
 	}
 
 	params->conversionType = ALTER_TABLE_SET_ACCESS_METHOD;
+	params->shardCountIsNull = true;
 	TableConversionState *con = CreateTableConversion(params);
 	ConvertTable(con);
 }
@@ -418,11 +421,6 @@ AlterTableSetAccessMethod(TableConversionParameters *params)
 void
 ConvertTable(TableConversionState *con)
 {
-	if (con->shardCountIsNull)
-	{
-		con->shardCount = con->originalShardCount;
-		con->shardCountIsNull = false;
-	}
 	List *preLoadCommands = GetPreLoadTableCreationCommands(con->relationId, true,
 															con->accessMethod);
 	List *postLoadCommands = GetPostLoadTableCreationCommands(con->relationId);
@@ -444,7 +442,6 @@ ConvertTable(TableConversionState *con)
 		isPartitionTable = true;
 		char *detachFromParentCommand = GenerateDetachPartitionCommand(con->relationId);
 		attachToParentCommand = GenerateAlterTableAttachPartitionCommand(con->relationId);
-
 
 		justBeforeDropCommands = lappend(justBeforeDropCommands, detachFromParentCommand);
 	}
@@ -478,7 +475,7 @@ ConvertTable(TableConversionState *con)
 
 			TableConversionParameters partitionParam = {
 				.relationId = partitionRelationId,
-				.shardCountIsNull = false,
+				.shardCountIsNull = con->shardCountIsNull,
 				.shardCount = con->shardCount
 			};
 
@@ -715,9 +712,18 @@ CreateDistributedTableLike(TableConversionState *con)
 			newColocateWith = "default";
 		}
 	}
+	int newShardCount = 0;
+	if (con->shardCountIsNull)
+	{
+		newShardCount = con->originalShardCount;
+	}
+	else
+	{
+		newShardCount = con->shardCount;
+	}
 	char partitionMethod = PartitionMethod(con->relationId);
 	CreateDistributedTable(con->newRelationId, newDistributionKey, partitionMethod,
-						   con->shardCount, newColocateWith, false);
+						   newShardCount, newColocateWith, false);
 }
 
 
@@ -788,17 +794,21 @@ ReplaceTable(Oid sourceId, Oid targetId, List *justBeforeDropCommands)
 	char *schemaName = get_namespace_name(schemaId);
 
 	StringInfo query = makeStringInfo();
+	int spiResult = 0;
 
-	ereport(NOTICE, (errmsg("Moving the data of %s",
-							quote_qualified_identifier(schemaName, sourceName))));
-
-	appendStringInfo(query, "INSERT INTO %s SELECT * FROM %s",
-					 quote_qualified_identifier(schemaName, targetName),
-					 quote_qualified_identifier(schemaName, sourceName));
-	int spiResult = SPI_execute(query->data, false, 0);
-	if (spiResult != SPI_OK_INSERT)
+	if (!PartitionedTable(sourceId))
 	{
-		ereport(ERROR, (errmsg("could not run SPI query")));
+		ereport(NOTICE, (errmsg("Moving the data of %s",
+								quote_qualified_identifier(schemaName, sourceName))));
+
+		appendStringInfo(query, "INSERT INTO %s SELECT * FROM %s",
+						 quote_qualified_identifier(schemaName, targetName),
+						 quote_qualified_identifier(schemaName, sourceName));
+		spiResult = SPI_execute(query->data, false, 0);
+		if (spiResult != SPI_OK_INSERT)
+		{
+			ereport(ERROR, (errmsg("could not run SPI query")));
+		}
 	}
 
 #if PG_VERSION_NUM >= PG_VERSION_13
@@ -930,7 +940,7 @@ CheckAlterDistributedTableConversionParameters(TableConversionState *con)
 	}
 
 	int colocatedTableCount = list_length(con->colocatedTableList) - 1;
-	if (colocatedTableCount > 0 && !con->shardCountIsNull && 
+	if (colocatedTableCount > 0 && !con->shardCountIsNull &&
 		con->cascadeToColocated == CASCADE_TO_COLOCATED_UNSPECIFIED)
 	{
 		ereport(ERROR, (errmsg("cascade_to_colocated parameter is necessary"),
@@ -959,7 +969,13 @@ CheckAlterDistributedTableConversionParameters(TableConversionState *con)
 									"will be same with colocate_with table's")));
 		}
 
-		/*shardCount is either 0 or already same with colocateWith table's*/
+		/*
+		 * shardCount is either 0 or already same with colocateWith table's
+		 * It's ok to set shardCountIsNull to false because we assume giving a table
+		 * to colocate with and no shard count is the same with giving colocate_with
+		 * table's shard count. So it is almost like the shard_count parameter was
+		 * given by the user.
+		 */
 		con->shardCount = colocateWithTableShardCount;
 		con->shardCountIsNull = false;
 

@@ -210,7 +210,6 @@ NOTICE:  Moving the data of undistribute_table.partitioned_table_6_10
 NOTICE:  Dropping the old undistribute_table.partitioned_table_6_10
 NOTICE:  Renaming the new table to undistribute_table.partitioned_table_6_10
 NOTICE:  creating a new table for undistribute_table.partitioned_table
-NOTICE:  Moving the data of undistribute_table.partitioned_table
 NOTICE:  Dropping the old undistribute_table.partitioned_table
 NOTICE:  Renaming the new table to undistribute_table.partitioned_table
  undistribute_table
