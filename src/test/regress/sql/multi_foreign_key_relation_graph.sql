@@ -394,6 +394,15 @@ BEGIN;
   ORDER BY tablename;
 ROLLBACK;
 
+CREATE TABLE local_table_4 (col int);
+-- Normally, below ddl would decide to invalidate foreign key graph in the end.
+-- But as it fails, we won't see foreign key graph invalidation log.
+ALTER TABLE local_table_1 ADD COLUMN another_col int REFERENCES local_table_4(col);
+-- When ddl command fails, we reset flag that we use to invalidate
+-- foreign key graph so that next command doesn't invalidate foreign
+-- key graph
+ALTER TABLE local_table_1 ADD COLUMN unrelated_column int;
+
 set client_min_messages to error;
 
 SET search_path TO public;
