@@ -741,12 +741,14 @@ SET client_min_messages TO DEBUG1;
 BEGIN;
   ALTER TABLE distributed_table_2 DROP CONSTRAINT distributed_table_2_col_key CASCADE;
 NOTICE:  drop cascades to constraint fkey_4 on table distributed_table_3
+DEBUG:  DDL command invalidates foreign key graph
 DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_table_3_xxx
 DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_table_3_xxx
 DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_table_3_xxx
 DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_table_3_xxx
   ALTER TABLE distributed_table_3 DROP CONSTRAINT distributed_table_3_col_key CASCADE;
 NOTICE:  drop cascades to constraint fkey_6 on table distributed_table_1
+DEBUG:  DDL command invalidates foreign key graph
 DEBUG:  drop cascades to constraint fkey_6_xxx on table fkey_graph.distributed_table_1_xxx
 DEBUG:  drop cascades to constraint fkey_6_xxx on table fkey_graph.distributed_table_1_xxx
 DEBUG:  drop cascades to constraint fkey_6_xxx on table fkey_graph.distributed_table_1_xxx
@@ -786,6 +788,7 @@ DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_t
 DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_table_3_xxx
 DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_table_3_xxx
 DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_table_3_xxx
+DEBUG:  DDL command invalidates foreign key graph
   -- should only see reference_table_1 & reference_table_1
   SELECT oid::regclass::text AS tablename
   FROM get_foreign_key_connected_relations('reference_table_1') AS f(oid oid)
@@ -799,7 +802,9 @@ DEBUG:  drop cascades to constraint fkey_4_xxx on table fkey_graph.distributed_t
 ROLLBACK;
 BEGIN;
   ALTER TABLE distributed_table_2 ADD CONSTRAINT fkey_55 FOREIGN KEY (col) REFERENCES reference_table_2(col);
+DEBUG:  DDL command invalidates foreign key graph
   ALTER TABLE distributed_table_1 ADD CONSTRAINT fkey_66 FOREIGN KEY (col) REFERENCES distributed_table_3(col);
+DEBUG:  DDL command invalidates foreign key graph
   -- show that we handle multiple edges between nodes in foreign key graph
   SELECT oid::regclass::text AS tablename
   FROM get_foreign_key_connected_relations('reference_table_1') AS f(oid oid)
@@ -838,8 +843,10 @@ BEGIN;
   CREATE TABLE local_table_3 (col int PRIMARY KEY);
 DEBUG:  CREATE TABLE / PRIMARY KEY will create implicit index "local_table_3_pkey" for table "local_table_3"
   ALTER TABLE local_table_1 ADD COLUMN another_col int REFERENCES local_table_3(col);
+DEBUG:  DDL command invalidates foreign key graph
   CREATE TABLE local_table_4 (col int PRIMARY KEY REFERENCES local_table_3 (col));
 DEBUG:  CREATE TABLE / PRIMARY KEY will create implicit index "local_table_4_pkey" for table "local_table_4"
+DEBUG:  DDL command invalidates foreign key graph
   -- we track add column & create table commands defining foreign keys too
   SELECT oid::regclass::text AS tablename
   FROM get_foreign_key_connected_relations('local_table_3') AS f(oid oid)
@@ -856,7 +863,9 @@ BEGIN;
   CREATE TABLE local_table_3 (col int PRIMARY KEY);
 DEBUG:  CREATE TABLE / PRIMARY KEY will create implicit index "local_table_3_pkey" for table "local_table_3"
   ALTER TABLE local_table_1 ADD COLUMN another_col int REFERENCES local_table_3(col);
+DEBUG:  DDL command invalidates foreign key graph
   ALTER TABLE local_table_1 DROP COLUMN another_col;
+DEBUG:  DDL command invalidates foreign key graph
   -- we track drop column commands dropping referencing columns,
   -- should not print anything
   SELECT oid::regclass::text AS tablename
@@ -871,8 +880,10 @@ BEGIN;
   CREATE TABLE local_table_3 (col int PRIMARY KEY);
 DEBUG:  CREATE TABLE / PRIMARY KEY will create implicit index "local_table_3_pkey" for table "local_table_3"
   ALTER TABLE local_table_1 ADD COLUMN another_col int REFERENCES local_table_3(col);
+DEBUG:  DDL command invalidates foreign key graph
   ALTER TABLE local_table_3 DROP COLUMN col CASCADE;
 NOTICE:  drop cascades to constraint local_table_1_another_col_fkey on table local_table_1
+DEBUG:  DDL command invalidates foreign key graph
   -- we track drop column commands dropping referenced columns,
   -- should not print anything
   SELECT oid::regclass::text AS tablename
