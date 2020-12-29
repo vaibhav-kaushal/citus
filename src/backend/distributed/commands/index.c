@@ -27,6 +27,7 @@
 #include "distributed/deparse_shard_query.h"
 #include "distributed/distributed_planner.h"
 #include "distributed/listutils.h"
+#include "distributed/local_executor.h"
 #include "distributed/coordinator_protocol.h"
 #include "distributed/metadata_cache.h"
 #include "distributed/multi_executor.h"
@@ -54,7 +55,7 @@ static int GetNumberOfIndexParameters(IndexStmt *createIndexStatement);
 static bool IndexAlreadyExists(IndexStmt *createIndexStatement);
 static Oid CreateIndexStmtGetIndexId(IndexStmt *createIndexStatement);
 static Oid CreateIndexStmtGetSchemaId(IndexStmt *createIndexStatement);
-static void SwitchToSequentialExecutionIfIndexNameTooLong(
+static void SwitchToSequentialOrLocalExecutionIfIndexNameTooLong(
 	IndexStmt *createIndexStatement);
 static char * GenerateLongestShardPartitionIndexName(IndexStmt *createIndexStatement);
 static char * GenerateDefaultIndexName(IndexStmt *createIndexStatement);
@@ -218,7 +219,7 @@ PreprocessIndexStmt(Node *node, const char *createIndexCommand)
 	 * the same, and thus forming a self-deadlock as these tables/
 	 * indexes are inserted into postgres' metadata tables, like pg_class.
 	 */
-	SwitchToSequentialExecutionIfIndexNameTooLong(createIndexStatement);
+	SwitchToSequentialOrLocalExecutionIfIndexNameTooLong(createIndexStatement);
 
 	DDLJob *ddlJob = GenerateCreateIndexDDLJob(createIndexStatement, createIndexCommand);
 	return list_make1(ddlJob);
@@ -344,12 +345,13 @@ ExecuteFunctionOnEachTableIndex(Oid relationId, PGIndexProcessor pgIndexProcesso
 
 
 /*
- * SwitchToSequentialExecutionIfIndexNameTooLong generates the longest index name
+ * SwitchToSequentialOrLocalExecutionIfIndexNameTooLong generates the longest index name
  * on the shards of the partitions, and if exceeds the limit switches to the
- * sequential execution to prevent self-deadlocks.
+ * sequential execution to prevent self-deadlocks. For single node, switches to local
+ * execution to prevent a distributed deadlock.
  */
 static void
-SwitchToSequentialExecutionIfIndexNameTooLong(IndexStmt *createIndexStatement)
+SwitchToSequentialOrLocalExecutionIfIndexNameTooLong(IndexStmt *createIndexStatement)
 {
 	Oid relationId = CreateIndexStmtGetRelationId(createIndexStatement);
 	if (!PartitionedTable(relationId))
@@ -371,7 +373,14 @@ SwitchToSequentialExecutionIfIndexNameTooLong(IndexStmt *createIndexStatement)
 	if (indexName &&
 		strnlen(indexName, NAMEDATALEN) >= NAMEDATALEN - 1)
 	{
-		if (ParallelQueryExecutedInTransaction())
+		/* to check whether it'a a single node cluster or not */
+		int workerCount = list_length(DistributedTablePlacementNodeList(NoLock));
+		if (workerCount < 2)
+		{
+			/* switch to local execution in case of single node, to prevent deadlock */
+			SetLocalExecutionStatus(LOCAL_EXECUTION_REQUIRED);
+		}
+		else if (ParallelQueryExecutedInTransaction())
 		{
 			/*
 			 * If there has already been a parallel query executed, the sequential mode
@@ -386,12 +395,14 @@ SwitchToSequentialExecutionIfIndexNameTooLong(IndexStmt *createIndexStatement)
 									"\"SET LOCAL citus.multi_shard_modify_mode TO "
 									"\'sequential\';\"")));
 		}
+		else
+		{
+			elog(DEBUG1, "the index name on the shards of the partition "
+						 "is too long, switching to sequential execution "
+						 "mode to prevent self deadlocks: %s", indexName);
 
-		elog(DEBUG1, "the index name on the shards of the partition "
-					 "is too long, switching to sequential execution "
-					 "mode to prevent self deadlocks: %s", indexName);
-
-		SetLocalMultiShardModifyModeToSequential();
+			SetLocalMultiShardModifyModeToSequential();
+		}
 	}
 }
 
@@ -801,6 +812,7 @@ ErrorIfUnsupportedAlterIndexStmt(AlterTableStmt *alterTableStatement)
 			case AT_SetRelOptions:  /* SET (...) */
 			case AT_ResetRelOptions:    /* RESET (...) */
 			case AT_ReplaceRelOptions:  /* replace entire option list */
+			case AT_SetStatistics:  /* SET STATISTICS */
 			{
 				/* this command is supported by Citus */
 				break;
