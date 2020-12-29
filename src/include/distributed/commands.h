@@ -172,7 +172,7 @@ extern bool ConstraintIsAForeignKey(char *inputConstaintName, Oid relationOid);
 extern bool ConstraintWithNameIsOfType(char *inputConstaintName, Oid relationId,
 									   char targetConstraintType);
 extern bool ConstraintWithIdIsOfType(Oid constraintId, char targetConstraintType);
-extern void ErrorIfTableHasExternalForeignKeys(Oid relationId);
+extern bool TableHasExternalForeignKeys(Oid relationId);
 extern List * GetForeignKeyOids(Oid relationId, int flags);
 extern Oid GetReferencedTableId(Oid foreignKeyId);
 
@@ -397,7 +397,11 @@ extern Oid GetTriggerFunctionId(Oid triggerId);
 typedef enum ExecuteCitusTableFunctionFlag
 {
 	INVALID_OPERATION = 1 << 0,
+	CREATE_CITUS_LOCAL_TABLE = 1 << 1,
 } ExecuteCitusTableFunctionFlag;
+
+/* create_citus_local_table.c */
+extern void CreateCitusLocalTable(Oid relationId, bool cascade);
 
 extern void ExecuteCitusTableFunctionCascade(Oid relationId, LOCKMODE relLockMode,
 											 ExecuteCitusTableFunctionFlag

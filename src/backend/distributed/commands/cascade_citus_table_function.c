@@ -280,6 +280,11 @@ GetCitusTableFunction(ExecuteCitusTableFunctionFlag executeCitusTableFunctionFla
 {
 	switch (executeCitusTableFunctionFlag)
 	{
+		case CREATE_CITUS_LOCAL_TABLE:
+		{
+			return CreateCitusLocalTable;
+		}
+
 		default:
 		{
 			/*
