@@ -280,6 +280,11 @@ GetCitusTableFunction(ExecuteCitusTableFunctionFlag executeCitusTableFunctionFla
 {
 	switch (executeCitusTableFunctionFlag)
 	{
+		case UNDISTRIBUTE_TABLE:
+		{
+			return UndistributeTable;
+		}
+
 		default:
 		{
 			/*
